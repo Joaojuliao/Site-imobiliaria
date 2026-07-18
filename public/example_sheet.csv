@@ -1,0 +1,4 @@
+titulo,descricao,preco,cidade,bairro,metragem,quartos,banheiros,garagem,url_imagem,url_maps,categoria,destaque
+Casa de Luxo,Linda casa com piscina,1500000,São Paulo,Morumbi,450,4,5,4,https://images.unsplash.com/photo-1600596542815-22b4899975d6,https://www.google.com/maps/embed?pb=...,Venda,TRUE
+Apartamento Centro,Apto reformado perto do metrô,350000,São Paulo,Centro,60,2,1,0,https://images.unsplash.com/photo-1522708323590-d24dbb6b0267,,Venda,FALSE
+Casa de Praia,Vista para o mar,800000,Guarujá,Enseada,120,3,2,2,https://images.unsplash.com/photo-1499793983690-e29da59ef1c2,,Temporada,TRUE

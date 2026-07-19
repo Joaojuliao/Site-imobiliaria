@@ -90,7 +90,7 @@ function buildMarkerFromDoc(docSnap) {
 const PIN_WIDTH = 36;
 const PIN_HEIGHT = 46;
 const PIN_TIP = [PIN_WIDTH / 2, 39]; // ponta do marcador = coordenada real no mapa
-const PIN_GLYPH_SIZE = 16;
+const PIN_GLYPH_SIZE = 14;
 
 const iconCache = new Map();
 
@@ -98,17 +98,28 @@ function createPinIcon(color, iconName) {
   const cacheKey = `${color}|${iconName}`;
   if (iconCache.has(cacheKey)) return iconCache.get(cacheKey);
 
-  const glyphMarkup = iconSvgMarkup(iconName, { color: '#ffffff', size: PIN_GLYPH_SIZE, strokeWidth: 2.25 });
+  let glyphMarkup = iconSvgMarkup(iconName);
+  if (!glyphMarkup) {
+    // Não deveria acontecer (iconSvgMarkup sempre cai para "home"), mas
+    // garante que o pin nunca fique sem ícone mesmo em cenários inesperados.
+    glyphMarkup = iconSvgMarkup('home');
+  }
+
+  // TODO(debug): remover depois de confirmar em produção que os ícones
+  // estão renderizando corretamente.
+  // eslint-disable-next-line no-console
+  console.debug('[PropertiesMap] createPinIcon', { iconName, color, glyphLength: glyphMarkup.length });
+
   const glyphOffset = (PIN_WIDTH - PIN_GLYPH_SIZE) / 2; // centraliza o glifo no círculo
 
   const html = `
     <div class="properties-map-pin" style="position:relative;width:${PIN_WIDTH}px;height:${PIN_HEIGHT}px;">
-      <svg width="${PIN_WIDTH}" height="${PIN_HEIGHT}" viewBox="0 0 ${PIN_WIDTH} ${PIN_HEIGHT}" style="position:absolute;inset:0;">
+      <svg class="properties-map-pin__bg" width="${PIN_WIDTH}" height="${PIN_HEIGHT}" viewBox="0 0 ${PIN_WIDTH} ${PIN_HEIGHT}" style="position:absolute;inset:0;z-index:1;display:block;overflow:visible;">
         <ellipse cx="${PIN_TIP[0]}" cy="${PIN_HEIGHT - 4}" rx="6" ry="2" fill="rgba(15,23,42,0.28)" />
         <path d="M10.5 23 L${PIN_TIP[0]} ${PIN_TIP[1]} L25.5 23 Z" fill="${color}" />
         <circle cx="18" cy="16" r="13.5" fill="${color}" stroke="#ffffff" stroke-width="2.5" />
       </svg>
-      <div style="position:absolute;top:${glyphOffset - 2}px;left:${glyphOffset}px;width:${PIN_GLYPH_SIZE}px;height:${PIN_GLYPH_SIZE}px;">
+      <div class="properties-map-pin__glyph" style="position:absolute;top:${glyphOffset - 2}px;left:${glyphOffset}px;width:${PIN_GLYPH_SIZE}px;height:${PIN_GLYPH_SIZE}px;z-index:2;pointer-events:none;visibility:visible;opacity:1;line-height:0;">
         ${glyphMarkup}
       </div>
     </div>
@@ -264,6 +275,11 @@ const PropertiesMap = () => {
         .leaflet-div-icon.properties-map-pin-wrapper {
           background: transparent;
           border: none;
+        }
+        .properties-map-pin-wrapper .properties-map-pin__glyph svg {
+          display: block;
+          visibility: visible;
+          opacity: 1;
         }
       `}</style>
       <div className="h-[400px] sm:h-[450px] lg:h-[500px] w-full rounded-2xl overflow-hidden border border-gray-200 shadow-sm">

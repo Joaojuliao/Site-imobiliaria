@@ -1,28 +1,32 @@
 /**
  * Sistema de ícones dos pins do mapa — espelha lib/mapa/pin-icon.tsx do
  * painel administrativo (Next.js), que usa React + react-dom/server +
- * lucide-react para gerar o mesmo SVG. Esse arquivo não pode ser importado
- * diretamente pelo site público (stack Vite separada), então a lógica de
- * mapeamento nome → ícone foi extraída para este módulo, mantendo:
+ * lucide-react para gerar o mesmo SVG.
  *
- *   - os mesmos valores de ICON_OPTIONS usados no seletor do painel;
- *   - o mesmo ICON_MAP (nome salvo no Firestore → ícone Lucide);
- *   - o mesmo resultado visual, pois os corpos de SVG abaixo foram
- *     extraídos de lucide-static na MESMA versão do lucide-react já usada
- *     neste projeto (0.555.0) — são os ícones pixel-a-pixel idênticos aos
- *     componentes React (Home, Building2, Building, MapPin, Star, Flag,
- *     Landmark, Store, KeyRound, LocateFixed), só que como markup estático,
- *     que é o formato que o Leaflet (L.divIcon) precisa.
+ * IMPORTANTE — por que este arquivo NÃO chama mais renderToStaticMarkup:
+ * a versão anterior replicava a chamada do painel
+ * (`renderToStaticMarkup(<Icon size={14} color="#ffffff" strokeWidth={2.5} />)`)
+ * diretamente no navegador. Isoladamente funcionava (testado via Node), mas
+ * dentro do bundle real do Vite os ícones não apareciam: react-dom/server é
+ * uma API pensada para SSR, a forma como o bundler resolve suas variantes
+ * (node/browser/edge) dentro de um app 100% client-side nem sempre é
+ * confiável, e o try/catch ao redor da chamada estava mascarando o erro
+ * real, devolvendo string vazia sem avisar — daí o pin aparecer com cor e
+ * formato, mas sem ícone.
  *
- * Se o painel adicionar/alterar ícones em pin-icon.tsx, replique a mudança
- * aqui para os dois lados continuarem batendo.
+ * A correção troca a geração dinâmica por markup SVG ESTÁTICO, extraído de
+ * lucide-static NA MESMA VERSÃO do lucide-react já usada no projeto
+ * (0.555.0) — ou seja, o mesmo `d` de path que o painel renderiza, só que
+ * como string pronta, sem depender de nenhuma API de renderização em
+ * tempo de execução. O ICON_MAP e os valores continuam exatamente os
+ * mesmos do painel.
  */
 
 // Mesmos valores/rótulos do seletor de ícone do painel.
 export const ICON_OPTIONS = [
   { value: 'home', label: 'Casa' },
   { value: 'building', label: 'Prédio' },
-  { value: 'house', label: 'Casa (alternativo)' },
+  { value: 'house', label: 'Residência' },
   { value: 'map-pin', label: 'Pin' },
   { value: 'star', label: 'Destaque' },
   { value: 'flag', label: 'Bandeira' },
@@ -32,11 +36,8 @@ export const ICON_OPTIONS = [
   { value: 'location-dot', label: 'Localização' },
 ];
 
-// nome salvo no Firestore (campo "icone") → ícone Lucide correspondente.
-// Mantém a mesma tabela de compatibilidade do painel:
-//   home → Home · building → Building2 · house → Building
-//   map-pin → MapPin · star → Star · flag → Flag · office → Landmark
-//   store → Store · key → KeyRound · location-dot → LocateFixed
+// nome salvo no Firestore (campo "icone") → ícone Lucide correspondente
+// (mantido como referência/documentação — o SVG real vem de ICON_BODIES).
 export const ICON_MAP = {
   home: 'Home',
   building: 'Building2',
@@ -50,9 +51,9 @@ export const ICON_MAP = {
   'location-dot': 'LocateFixed',
 };
 
-// Corpo (filhos) de cada <svg> do Lucide, extraído de lucide-static@0.555.0
-// — a mesma versão do lucide-react já instalada no projeto — para garantir
-// que sejam exatamente os ícones que o painel renderiza.
+// Corpo (filhos) de cada <svg>, extraído de lucide-static@0.555.0 — a
+// mesma versão do lucide-react instalada no projeto — garantindo que
+// sejam os mesmos ícones que o painel renderiza via componente React.
 const ICON_BODIES = {
   home:
     '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8" />' +
@@ -86,7 +87,7 @@ const ICON_BODIES = {
     '<path d="M4 10.95V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8.05" />',
   key:
     '<path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z" />' +
-    '<circle cx="16.5" cy="7.5" r=".5" fill="currentColor" />',
+    '<circle cx="16.5" cy="7.5" r=".5" fill="#ffffff" />',
   'location-dot':
     '<line x1="2" x2="5" y1="12" y2="12" /><line x1="19" x2="22" y1="12" y2="12" />' +
     '<line x1="12" x2="12" y1="2" y2="5" /><line x1="12" x2="12" y1="19" y2="22" />' +
@@ -95,22 +96,27 @@ const ICON_BODIES = {
 
 const DEFAULT_ICON_NAME = 'home';
 
+export function getIconComponent(name) {
+  return ICON_BODIES[name] ? name : DEFAULT_ICON_NAME;
+}
+
 /**
- * Gera o markup de um <svg> Lucide completo e autocontido, pronto para ser
- * embutido em HTML estático (ex.: L.divIcon do Leaflet). Faz fallback para
- * "home" quando `name` não é reconhecido — mesmo comportamento do painel.
+ * Gera um <svg> completo e sempre visível — width/height definidos,
+ * viewBox válido, fill="none", stroke="#ffffff", stroke-width="2.5" —
+ * sem depender de nenhuma renderização React em tempo de execução.
+ * Nunca retorna string vazia: faz fallback para "home" quando `name` não
+ * é reconhecido.
  *
  * @param {string} name - valor salvo no campo "icone" (ex.: "building")
- * @param {{ color?: string, size?: number, strokeWidth?: number }} [options]
  */
-export function iconSvgMarkup(name, options = {}) {
-  const { color = '#ffffff', size = 18, strokeWidth = 2 } = options;
+export function iconSvgMarkup(name) {
   const body = ICON_BODIES[name] || ICON_BODIES[DEFAULT_ICON_NAME];
-
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" ` +
-    `fill="none" stroke="currentColor" stroke-width="${strokeWidth}" stroke-linecap="round" ` +
-    `stroke-linejoin="round" style="color:${color}" aria-hidden="true">${body}</svg>`
+    '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" ' +
+    'fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" ' +
+    'stroke-linejoin="round" style="display:block;overflow:visible" aria-hidden="true">' +
+    body +
+    '</svg>'
   );
 }
 

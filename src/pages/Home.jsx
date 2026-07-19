@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import Hero from '../components/home/Hero';
 import FeaturedSection from '../components/home/FeaturedSection';
+import PropertiesMap from '../components/home/PropertiesMap';
 import RevalidatingBadge from '../components/ui/RevalidatingBadge';
 import { useProperties } from '../context/PropertyContext';
 import useSEO from '../hooks/useSEO';
@@ -14,6 +15,11 @@ const Home = () => {
         <div className="min-h-screen bg-gray-50">
             <Hero />
             <FeaturedSection />
+
+            {/* PropertiesMap busca seus próprios dados direto do Firestore
+                (coleção imobiliarias/{tenant}/imoveis_no_mapa) — não usa o
+                PropertyContext, que é alimentado pela planilha/Apps Script. */}
+            <PropertiesMap />
 
             <section className="py-16 container mx-auto px-4 text-center">
                 <div className="max-w-2xl mx-auto">

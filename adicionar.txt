@@ -1,5 +1,7 @@
 
-arrumar os resultados quando filtrar numeros de imoveis e as paginas(seções tem que se modificar)
+arrumar os resultados quando filtrar numeros de imoveis e as paginas(seções tem que se modificar)//
 
 
-ver se o site esta de acordo com as leis do lgpd e outras de coletas de dados
+ver se o site esta de acordo com as leis do lgpd e outras de coletas de dados//
+
+criar o sistema de criar a LGPD no painel

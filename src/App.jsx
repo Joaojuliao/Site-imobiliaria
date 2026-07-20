@@ -11,6 +11,7 @@ const PropertyDetails = lazy(() => import('./pages/PropertyDetails'));
 const Financie = lazy(() => import('./pages/Financie'));
 const Negocie = lazy(() => import('./pages/Negocie'));
 const ImoveisFavoritos = lazy(() => import('./pages/ImoveisFavoritos'));
+const PoliticaPrivacidade = lazy(() => import('./pages/PoliticaPrivacidade'));
 
 import { PropertyProvider } from './context/PropertyContext';
 
@@ -34,6 +35,7 @@ function App() {
               <Route path="/financie" element={<Financie />} />
               <Route path="/negocie" element={<Negocie />} />
               <Route path="/favoritos" element={<ImoveisFavoritos />} />
+              <Route path="/politica-de-privacidade" element={<PoliticaPrivacidade />} />
             </Routes>
           </Suspense>
         </Layout>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { Home, Instagram, Facebook, Twitter } from 'lucide-react';
 
 const Footer = () => {
@@ -35,8 +36,15 @@ const Footer = () => {
                     </div>
 
                     <div>
-                        <h3 className="font-semibold mb-4">Redes Sociais</h3>
-                        <div className="flex gap-4">
+                        <h3 className="font-semibold mb-4">Legal</h3>
+                        <ul className="space-y-2 text-sm text-gray-500">
+                            <li>
+                                <Link to="/politica-de-privacidade" className="hover:text-primary">
+                                    Política de Privacidade
+                                </Link>
+                            </li>
+                        </ul>
+                        <div className="flex gap-4 mt-4">
                             <a href="#" className="text-gray-400 hover:text-primary">
                                 <Instagram className="h-5 w-5" />
                             </a>

@@ -19,6 +19,7 @@ import {
     ChevronDown
 } from 'lucide-react';
 import Button from '../components/ui/Button';
+import LgpdConsentCheckbox from '../components/ui/LgpdConsentCheckbox';
 import useSEO from '../hooks/useSEO';
 import { db } from '../services/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
@@ -514,10 +515,15 @@ const Negocie = () => {
                                 <input type="checkbox" name="autorization" required className="w-5 h-5 rounded border-gray-300 text-primary mt-1" checked={formData.autorization} onChange={handleChange} />
                                 <span className="text-sm text-gray-600 leading-relaxed">Autorizo a <strong>INTERMEDIAÇÃO</strong> deste imóvel de minha propriedade.</span>
                             </label>
-                            <label className="flex items-start gap-4 cursor-pointer group">
-                                <input type="checkbox" name="check" required className="w-5 h-5 rounded border-gray-300 text-primary mt-1" checked={formData.check} onChange={handleChange} />
-                                <span className="text-sm text-gray-600 leading-relaxed">Concordo com a <a href="/politica-privacidade" target="_blank" className="text-primary font-bold hover:underline">Política de Privacidade</a>.</span>
-                            </label>
+
+                            {/*
+                              Checkbox de concordância com a Política de Privacidade.
+                              Renderiza (e exige marcação) somente se a imobiliária
+                              tiver privacyConsentRequired ativado nas configurações
+                              de LGPD — controlado 100% pelo painel, sem hardcode.
+                            */}
+                            <LgpdConsentCheckbox checked={formData.check} onChange={handleChange} />
+
                             {submitError && (
                                 <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl p-4">{submitError}</p>
                             )}

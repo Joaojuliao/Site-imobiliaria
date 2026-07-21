@@ -7,6 +7,7 @@ import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 import ImageLightbox from '../components/ui/ImageLightbox';
 import { formatCurrency } from '../utils/formatters';
+import { isGoogleMapsEmbedUrl } from '../utils/safeUrl';
 import useSEO from '../hooks/useSEO';
 
 const DetailsSkeleton = () => (
@@ -107,6 +108,12 @@ const PropertyDetails = () => {
   const nextImage = () => setCurrentImageIndex(p => (p + 1) % images.length);
   const prevImage = () => setCurrentImageIndex(p => (p - 1 + images.length) % images.length);
 
+  // SEGURANÇA: só renderizamos o iframe se a URL vier comprovadamente do
+  // domínio de embed do Google Maps. Uma célula de planilha mal preenchida
+  // (ou comprometida) não consegue mais embutir uma página arbitrária de
+  // terceiros dentro do site usando a confiança do domínio da imobiliária.
+  const hasSafeMapsUrl = isGoogleMapsEmbedUrl(property.mapsUrl);
+
   return (
     <div className="min-h-screen bg-white pb-20">
       {/* Gallery */}
@@ -191,11 +198,20 @@ const PropertyDetails = () => {
               <p className="text-gray-600 leading-relaxed whitespace-pre-line">{property.description}</p>
             </div>
 
-            {property.mapsUrl && (
+            {hasSafeMapsUrl && (
               <div>
                 <h2 className="text-2xl font-bold mb-4">Localização</h2>
                 <div className="aspect-video w-full rounded-xl overflow-hidden bg-gray-100 border">
-                  <iframe src={property.mapsUrl} width="100%" height="100%" style={{ border: 0 }} allowFullScreen loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+                  <iframe
+                    src={property.mapsUrl}
+                    width="100%"
+                    height="100%"
+                    style={{ border: 0 }}
+                    allowFullScreen
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                    sandbox="allow-scripts allow-same-origin allow-popups"
+                  />
                 </div>
               </div>
             )}

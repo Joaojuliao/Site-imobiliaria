@@ -28,54 +28,134 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 // Configurado por deploy em .env — nunca editável pelo visitante
 const SUBDOMAIN = import.meta.env.VITE_SUBDOMAIN;
 
+/**
+ * SEGURANÇA (auditoria):
+ * -----------------------------------------------------------------------
+ * 1) Nunca gravamos `{...formData}` diretamente no Firestore. Construímos
+ *    um payload explícito (ALLOWED FIELDS) para que nenhum campo futuro
+ *    adicionado ao estado do formulário vaze para o banco sem revisão
+ *    consciente, e para que nada além do esperado seja aceito.
+ * 2) Limites de tamanho são aplicados tanto via `maxLength` no HTML quanto
+ *    via validação em JS antes do envio — mas isso é só a primeira camada.
+ *    A camada que realmente protege contra abuso é a Firestore Security
+ *    Rule (`firestore.rules`), que deve validar tipos, tamanhos e a lista
+ *    de campos permitidos no servidor, pois o client-side é sempre
+ *    contornável (alguém pode chamar a API do Firestore diretamente).
+ * 3) Honeypot simples (`website`) para reduzir spam automatizado sem
+ *    exigir CAPTCHA. Bots preenchem todos os inputs de um form; um campo
+ *    invisível para humanos e SEM label acessível costuma pegar a maioria
+ *    dos bots simples. Isso não substitui o Firebase App Check.
+ * -----------------------------------------------------------------------
+ */
+
+const FIELD_LIMITS = {
+    name: 120,
+    cellphone_number: 30,
+    email: 150,
+    zip_code: 10,
+    uf: 2,
+    city: 120,
+    neighborhood_id: 120,
+    street_address: 200,
+    street_number: 20,
+    street_complement: 120,
+    description: 3000,
+    price: 40,
+    condominium_price: 40,
+    territorial_tax_price: 40,
+};
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const initialFormData = {
+    name: '',
+    cellphone_number: '',
+    email: '',
+    transaction: 'Vender',
+    profile: 'Residencial',
+    subtype_id: '',
+    zip_code: '',
+    uf: '',
+    city: '',
+    neighborhood_id: '',
+    street_address: '',
+    street_number: '',
+    street_complement: '',
+    // Medidas
+    built_area: '',
+    private_area: '',
+    total_area: '',
+    // Cômodos
+    bedroom: '',
+    suite: '',
+    bathroom: '',
+    garage: '',
+    is_covered: false,
+    has_box_in_garage: false,
+    tvroom: '',
+    diningroom: '',
+    livingroom: '',
+    washbasin: '',
+    service_area: '',
+    kitchen: '',
+    closet: '',
+    office: '',
+    employeeDependency: '',
+    pantry: '',
+    // Multi-selects
+    characteristics: [],
+    establishments: [],
+    // Financeiro
+    price: '',
+    condominium_price: '',
+    territorial_tax_price: '',
+    description: '',
+    autorization: false,
+    check: false,
+    // Honeypot — nunca preenchido por um humano; não é enviado ao Firestore
+    website: '',
+};
+
+// Lista explícita do que é gravado no Firestore. Qualquer campo novo
+// adicionado ao estado do formulário no futuro precisa ser adicionado aqui
+// conscientemente antes de ser persistido — evita vazamento acidental de
+// campos internos (ex.: um futuro `internalNotes`, `adminFlag`, etc.).
+const ALLOWED_FIELDS = [
+    'name', 'cellphone_number', 'email', 'transaction', 'profile', 'subtype_id',
+    'zip_code', 'uf', 'city', 'neighborhood_id', 'street_address', 'street_number',
+    'street_complement', 'built_area', 'private_area', 'total_area', 'bedroom',
+    'suite', 'bathroom', 'garage', 'is_covered', 'has_box_in_garage', 'tvroom',
+    'diningroom', 'livingroom', 'washbasin', 'service_area', 'kitchen', 'closet',
+    'office', 'employeeDependency', 'pantry', 'characteristics', 'establishments',
+    'price', 'condominium_price', 'territorial_tax_price', 'description',
+    'autorization', 'check',
+];
+
+function buildLeadPayload(formData) {
+    const payload = {};
+    for (const key of ALLOWED_FIELDS) {
+        const value = formData[key];
+        if (typeof value === 'string') {
+            payload[key] = value.trim().slice(0, FIELD_LIMITS[key] || 500);
+        } else {
+            payload[key] = value;
+        }
+    }
+    return payload;
+}
+
+function validateLead(formData) {
+    if (!formData.name.trim()) return 'Informe seu nome.';
+    if (!formData.email.trim() || !EMAIL_REGEX.test(formData.email.trim())) return 'Informe um e-mail válido.';
+    if (!formData.cellphone_number.trim()) return 'Informe um telefone para contato.';
+    if (formData.description.length > FIELD_LIMITS.description) return 'A descrição está muito longa.';
+    if (!formData.autorization) return 'É necessário autorizar a intermediação do imóvel.';
+    return null;
+}
+
 const Negocie = () => {
     useSEO('Negocie seu Imóvel', 'Anuncie seu imóvel conosco. Avaliação técnica precisa e atendimento especializado para vender ou alugar.');
-    const [formData, setFormData] = useState({
-        name: '',
-        cellphone_number: '',
-        email: '',
-        transaction: 'Vender',
-        profile: 'Residencial',
-        subtype_id: '',
-        zip_code: '',
-        uf: '',
-        city: '',
-        neighborhood_id: '',
-        street_address: '',
-        street_number: '',
-        street_complement: '',
-        // Medidas
-        built_area: '',
-        private_area: '',
-        total_area: '',
-        // Cômodos
-        bedroom: '',
-        suite: '',
-        bathroom: '',
-        garage: '',
-        is_covered: false,
-        has_box_in_garage: false,
-        tvroom: '',
-        diningroom: '',
-        livingroom: '',
-        washbasin: '',
-        service_area: '',
-        kitchen: '',
-        closet: '',
-        office: '',
-        employeeDependency: '',
-        pantry: '',
-        // Multi-selects
-        characteristics: [],
-        establishments: [],
-        // Financeiro
-        price: '',
-        condominium_price: '',
-        territorial_tax_price: '',
-        description: '',
-        autorization: '',
-        check: ''
-    });
+    const [formData, setFormData] = useState(initialFormData);
 
     const [submitted, setSubmitted] = useState(false);
     const [submitting, setSubmitting] = useState(false);
@@ -156,10 +236,31 @@ const Negocie = () => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setSubmitError(null);
+
+        // Honeypot: campo invisível para humanos. Se veio preenchido, é bot.
+        // Falhamos silenciosamente (sem revelar ao bot que foi detectado).
+        if (formData.website) {
+            setSubmitted(true);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            return;
+        }
+
+        const validationError = validateLead(formData);
+        if (validationError) {
+            setSubmitError(validationError);
+            return;
+        }
+
+        if (!SUBDOMAIN) {
+            setSubmitError('Configuração da imobiliária ausente. Contate o suporte.');
+            return;
+        }
+
         setSubmitting(true);
         try {
+            const payload = buildLeadPayload(formData);
             await addDoc(collection(db, 'imobiliarias', SUBDOMAIN, 'imoveis_negociar'), {
-                ...formData,
+                ...payload,
                 createdAt: serverTimestamp(),
             });
             setSubmitted(true);
@@ -171,7 +272,7 @@ const Negocie = () => {
             setSubmitting(false);
         }
     };
-    
+
     const benefits = [
         {
             icon: <Scale className="h-6 w-6 text-primary" />,
@@ -206,7 +307,7 @@ const Negocie = () => {
                     <p className="text-gray-600 mb-8">
                         Obrigado por detalhar seu imóvel. Nossa equipe analisará cuidadosamente cada característica e entrará em contato em breve para os próximos passos.
                     </p>
-                    <Button onClick={() => setSubmitted(false)} className="w-full">
+                    <Button onClick={() => { setFormData(initialFormData); setSubmitted(false); }} className="w-full">
                         Voltar ao formulário
                     </Button>
                 </div>
@@ -247,6 +348,21 @@ const Negocie = () => {
                 <div className="bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100">
                     <form onSubmit={handleSubmit} className="p-8 md:p-12 space-y-12">
 
+                        {/* Honeypot — mantido fora da vista humana via CSS, nunca com display:none
+                            (alguns bots ignoram display:none) e sem "type=hidden" (idem). Não possui
+                            label associado nem é alcançável por Tab (tabIndex=-1), então usuários
+                            reais nunca interagem com ele. */}
+                        <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }} aria-hidden="true">
+                            <input
+                                type="text"
+                                name="website"
+                                tabIndex={-1}
+                                autoComplete="off"
+                                value={formData.website}
+                                onChange={handleChange}
+                            />
+                        </div>
+
                         {/* 1. Seus Dados */}
                         <div className="space-y-6">
                             <div className="flex items-center gap-3 border-b border-gray-100 pb-4">
@@ -258,15 +374,15 @@ const Negocie = () => {
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                 <div className="space-y-2">
                                     <label className="text-sm font-semibold text-gray-700">Nome Completo</label>
-                                    <input type="text" name="name" required placeholder="Seu nome" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary outline-none" value={formData.name} onChange={handleChange} />
+                                    <input type="text" name="name" required maxLength={FIELD_LIMITS.name} placeholder="Seu nome" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary outline-none" value={formData.name} onChange={handleChange} />
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-sm font-semibold text-gray-700">Telefone / WhatsApp</label>
-                                    <input type="tel" name="cellphone_number" required placeholder="(00) 00000-0000" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary outline-none" value={formData.cellphone_number} onChange={handleChange} />
+                                    <input type="tel" name="cellphone_number" required maxLength={FIELD_LIMITS.cellphone_number} placeholder="(00) 00000-0000" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary outline-none" value={formData.cellphone_number} onChange={handleChange} />
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-sm font-semibold text-gray-700">E-mail</label>
-                                    <input type="email" name="email" required placeholder="seu@email.com" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary outline-none" value={formData.email} onChange={handleChange} />
+                                    <input type="email" name="email" required maxLength={FIELD_LIMITS.email} placeholder="seu@email.com" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary outline-none" value={formData.email} onChange={handleChange} />
                                 </div>
                             </div>
                         </div>
@@ -326,31 +442,31 @@ const Negocie = () => {
                             <div className="grid grid-cols-1 md:grid-cols-6 gap-6">
                                 <div className="md:col-span-2 space-y-2">
                                     <label className="text-sm font-semibold text-gray-700">CEP</label>
-                                    <input type="text" name="zip_code" required placeholder="00000-000" className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none" value={formData.zip_code} onChange={handleChange} />
+                                    <input type="text" name="zip_code" required maxLength={FIELD_LIMITS.zip_code} placeholder="00000-000" className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none" value={formData.zip_code} onChange={handleChange} />
                                 </div>
                                 <div className="md:col-span-1 space-y-2">
                                     <label className="text-sm font-semibold text-gray-700">UF</label>
-                                    <input type="text" name="uf" required placeholder="UF" maxLength="2" className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none uppercase" value={formData.uf} onChange={handleChange} />
+                                    <input type="text" name="uf" required placeholder="UF" maxLength={FIELD_LIMITS.uf} className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none uppercase" value={formData.uf} onChange={handleChange} />
                                 </div>
                                 <div className="md:col-span-3 space-y-2">
                                     <label className="text-sm font-semibold text-gray-700">Cidade</label>
-                                    <input type="text" name="city" required placeholder="Cidade" className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none" value={formData.city} onChange={handleChange} />
+                                    <input type="text" name="city" required maxLength={FIELD_LIMITS.city} placeholder="Cidade" className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none" value={formData.city} onChange={handleChange} />
                                 </div>
                                 <div className="md:col-span-3 space-y-2">
                                     <label className="text-sm font-semibold text-gray-700">Bairro</label>
-                                    <input type="text" name="neighborhood_id" required placeholder="Bairro" className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none" value={formData.neighborhood_id} onChange={handleChange} />
+                                    <input type="text" name="neighborhood_id" required maxLength={FIELD_LIMITS.neighborhood_id} placeholder="Bairro" className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none" value={formData.neighborhood_id} onChange={handleChange} />
                                 </div>
                                 <div className="md:col-span-3 space-y-2">
                                     <label className="text-sm font-semibold text-gray-700">Endereço</label>
-                                    <input type="text" name="street_address" required placeholder="Rua, Avenida, etc" className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none" value={formData.street_address} onChange={handleChange} />
+                                    <input type="text" name="street_address" required maxLength={FIELD_LIMITS.street_address} placeholder="Rua, Avenida, etc" className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none" value={formData.street_address} onChange={handleChange} />
                                 </div>
                                 <div className="md:col-span-2 space-y-2">
                                     <label className="text-sm font-semibold text-gray-700">Número</label>
-                                    <input type="text" name="street_number" required placeholder="0" className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none" value={formData.street_number} onChange={handleChange} />
+                                    <input type="text" name="street_number" required maxLength={FIELD_LIMITS.street_number} placeholder="0" className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none" value={formData.street_number} onChange={handleChange} />
                                 </div>
                                 <div className="md:col-span-4 space-y-2">
                                     <label className="text-sm font-semibold text-gray-700">Complemento</label>
-                                    <input type="text" name="street_complement" placeholder="Apto, Bloco, etc" className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none" value={formData.street_complement} onChange={handleChange} />
+                                    <input type="text" name="street_complement" maxLength={FIELD_LIMITS.street_complement} placeholder="Apto, Bloco, etc" className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none" value={formData.street_complement} onChange={handleChange} />
                                 </div>
                             </div>
                         </div>
@@ -371,7 +487,7 @@ const Negocie = () => {
                                 ].map(field => (
                                     <div key={field.name} className="space-y-2">
                                         <label className="text-sm font-semibold text-gray-700">{field.label}</label>
-                                        <input type="text" name={field.name} placeholder="0" className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none" value={formData[field.name]} onChange={handleChange} />
+                                        <input type="text" name={field.name} maxLength={20} placeholder="0" className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none" value={formData[field.name]} onChange={handleChange} />
                                     </div>
                                 ))}
                             </div>
@@ -404,7 +520,7 @@ const Negocie = () => {
                                 ].map(item => (
                                     <div key={item.name} className="space-y-2">
                                         <label className="text-sm font-semibold text-gray-700">{item.label}</label>
-                                        <input type="text" name={item.name} placeholder="0" className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none text-center" value={formData[item.name]} onChange={handleChange} />
+                                        <input type="text" name={item.name} maxLength={10} placeholder="0" className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none text-center" value={formData[item.name]} onChange={handleChange} />
                                     </div>
                                 ))}
                             </div>
@@ -487,15 +603,15 @@ const Negocie = () => {
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                 <div className="space-y-2">
                                     <label className="text-sm font-semibold text-gray-700">Preço do imóvel</label>
-                                    <input type="text" name="price" required placeholder="R$ 0,00" className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none font-bold text-primary" value={formData.price} onChange={handleChange} />
+                                    <input type="text" name="price" required maxLength={FIELD_LIMITS.price} placeholder="R$ 0,00" className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none font-bold text-primary" value={formData.price} onChange={handleChange} />
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-sm font-semibold text-gray-700">Condomínio (Mensal)</label>
-                                    <input type="text" name="condominium_price" placeholder="R$ 0,00" className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none" value={formData.condominium_price} onChange={handleChange} />
+                                    <input type="text" name="condominium_price" maxLength={FIELD_LIMITS.condominium_price} placeholder="R$ 0,00" className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none" value={formData.condominium_price} onChange={handleChange} />
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-sm font-semibold text-gray-700">IPTU (Anual)</label>
-                                    <input type="text" name="territorial_tax_price" placeholder="R$ 0,00" className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none" value={formData.territorial_tax_price} onChange={handleChange} />
+                                    <input type="text" name="territorial_tax_price" maxLength={FIELD_LIMITS.territorial_tax_price} placeholder="R$ 0,00" className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none" value={formData.territorial_tax_price} onChange={handleChange} />
                                 </div>
                             </div>
                         </div>
@@ -506,7 +622,8 @@ const Negocie = () => {
                             <p className="text-sm text-gray-500 bg-gray-50 p-4 rounded-xl border border-gray-100">
                                 <strong>Dica:</strong> Informe dados para ajudar a valorizar o anúncio, como situação do imóvel, pontos fortes do bairro, vizinhança, ventilação, iluminação, etc.
                             </p>
-                            <textarea name="description" rows="5" placeholder="Digite aqui..." className="w-full px-4 py-4 rounded-xl border border-gray-200 outline-none resize-none leading-relaxed" value={formData.description} onChange={handleChange}></textarea>
+                            <textarea name="description" rows="5" maxLength={FIELD_LIMITS.description} placeholder="Digite aqui..." className="w-full px-4 py-4 rounded-xl border border-gray-200 outline-none resize-none leading-relaxed" value={formData.description} onChange={handleChange}></textarea>
+                            <p className="text-xs text-gray-400 text-right">{formData.description.length}/{FIELD_LIMITS.description}</p>
                         </div>
 
                         {/* Final Consents */}

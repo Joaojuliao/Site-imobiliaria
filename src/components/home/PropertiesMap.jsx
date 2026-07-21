@@ -39,8 +39,23 @@ function looksLikeImageUrl(url) {
   return false;
 }
 
+// SEGURANÇA: só tratamos "url" como link externo navegável se ela realmente
+// aponta para http(s) — impede que um valor como "javascript:alert(1)" ou
+// "data:text/html,...", vindo de um documento do Firestore ou de uma célula
+// de planilha mal formatada, vire um <a href> clicável. `looksLikeImageUrl`
+// já filtra imagens; isto filtra qualquer coisa que não seja um link normal.
+function isSafeExternalUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function resolvePropertyHref(data) {
-  if (data.url && !looksLikeImageUrl(data.url)) {
+  if (data.url && !looksLikeImageUrl(data.url) && isSafeExternalUrl(data.url)) {
     return { type: 'external', href: data.url };
   }
   if (data.codigo) {
@@ -105,10 +120,14 @@ function createPinIcon(color, iconName) {
     glyphMarkup = iconSvgMarkup('home');
   }
 
-  // TODO(debug): remover depois de confirmar em produção que os ícones
-  // estão renderizando corretamente.
-  // eslint-disable-next-line no-console
-  console.debug('[PropertiesMap] createPinIcon', { iconName, color, glyphLength: glyphMarkup.length });
+  // NOTA (auditoria de segurança): o console.debug que existia aqui foi
+  // removido. Ele expunha, para qualquer visitante que abrisse o console
+  // do navegador, o nome do ícone, a cor e o tamanho do markup gerado a
+  // cada pin renderizado — informação de baixo risco isoladamente, mas
+  // sem nenhum valor para o usuário final e um hábito ruim (o comentário
+  // original já marcava isso como "remover depois de confirmar em
+  // produção"). Se for necessário depurar de novo, envolva o log em
+  // `if (import.meta.env.DEV) { ... }` para que nunca rode em produção.
 
   const glyphOffset = (PIN_WIDTH - PIN_GLYPH_SIZE) / 2; // centraliza o glifo no círculo
 

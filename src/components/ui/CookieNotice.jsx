@@ -3,12 +3,10 @@ import { Link } from 'react-router-dom';
 import { Cookie, X } from 'lucide-react';
 import Button from './Button';
 import { useLgpdConfig } from '../../hooks/useLgpdConfig';
+import { loadGoogleAnalytics } from '../../services/analytics';
 
 const SUBDOMAIN = import.meta.env.VITE_SUBDOMAIN;
 
-// Chave isolada por tenant — cookie_consent_{tenantId}, exatamente como
-// especificado. Guarda só a preferência ('accepted' | 'dismissed'), nunca
-// dados pessoais do visitante.
 function storageKey() {
   return `cookie_consent_${SUBDOMAIN || 'default'}`;
 }
@@ -18,19 +16,32 @@ const CookieNotice = () => {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    if (loading || !config.cookieNoticeEnabled) return;
+    if (loading) return;
+
+    // Imobiliária desativou o aviso de cookies: não há decisão do
+    // visitante para esperar, então o Analytics carrega normalmente.
+    if (!config.cookieNoticeEnabled) {
+      loadGoogleAnalytics();
+      return;
+    }
+
     try {
       const stored = localStorage.getItem(storageKey());
-      if (!stored) setVisible(true);
+      if (stored === 'accepted') {
+        loadGoogleAnalytics();
+      } else if (!stored) {
+        setVisible(true);
+      }
+      // stored === 'dismissed': não mostra o aviso de novo nem carrega
+      // o Analytics — o visitante fechou sem aceitar.
     } catch {
-      // localStorage indisponível (modo privado, etc.) — mostra o aviso
-      // mesmo assim, só não persiste a escolha entre sessões.
       setVisible(true);
     }
   }, [loading, config.cookieNoticeEnabled]);
 
   const decide = (value) => {
     try { localStorage.setItem(storageKey(), value); } catch { /* noop */ }
+    if (value === 'accepted') loadGoogleAnalytics();
     setVisible(false);
   };
 
